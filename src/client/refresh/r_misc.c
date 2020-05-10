@@ -81,6 +81,8 @@ R_InitParticleTexture(void)
 
 	r_notexture = R_LoadPic("***r_notexture***", (byte *)data,
 			8, 0, 8, 0, it_wall, 32);
+
+	CHECK_GL_ERROR();
 }
 
 void
@@ -202,9 +204,13 @@ R_SetDefaultState(void)
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glShadeModel(GL_FLAT);
 
+	CHECK_GL_ERROR();
+
 	R_TextureMode(gl_texturemode->string);
 	R_TextureAlphaMode(gl_texturealphamode->string);
 	R_TextureSolidMode(gl_texturesolidmode->string);
+
+	CHECK_GL_ERROR();
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
@@ -212,9 +218,15 @@ R_SetDefaultState(void)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
+	CHECK_GL_ERROR();
+
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+	CHECK_GL_ERROR();
+
 	R_TexEnv(GL_REPLACE);
+
+	CHECK_GL_ERROR();
 
 	if (qglPointParameterfEXT)
 	{
@@ -236,16 +248,33 @@ R_SetDefaultState(void)
 		qglPointParameterfvEXT(GL_DISTANCE_ATTENUATION_EXT, attenuations);
 	}
 
+	CHECK_GL_ERROR();
+
 	if (qglColorTableEXT && gl_ext_palettedtexture->value)
 	{
 		glEnable(GL_SHARED_TEXTURE_PALETTE_EXT);
 		R_SetTexturePalette(d_8to24table);
 	}
 
+	CHECK_GL_ERROR();
+
 	if (gl_msaa_samples->value)
 	{
 		glEnable(GL_MULTISAMPLE);
-		glHint(GL_MULTISAMPLE_FILTER_HINT_NV, GL_NICEST);
+		
+		if(gl_config.multisample_filter_hint)
+		{
+			glHint(GL_MULTISAMPLE_FILTER_HINT_NV, GL_NICEST);
+		}
 	}
+	
+	CHECK_GL_ERROR();
+
+	if (qglUseProgramObjectARB)
+	{
+		qglUseProgramObjectARB(0);
+	}
+	
+	CHECK_GL_ERROR();
 }
 

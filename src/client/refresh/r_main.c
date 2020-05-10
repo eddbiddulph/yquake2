@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2016,2017 Edd Biddulph
  * Copyright (C) 1997-2001 Id Software, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -359,6 +360,11 @@ R_DrawEntitiesOnList(void)
 		}
 	}
 
+	if (gl_pt_enable->value)
+	{
+		R_CaptureWorldForTAA();
+	}
+	
 	/* draw transparent entities
 	   we could sort these if it ever
 	   becomes a problem... */
@@ -1030,9 +1036,15 @@ R_RenderView(refdef_t *fd)
 	R_SetupGL();
 
 	R_MarkLeaves(); /* done here so we know if we're in water */
-
+	
+	if (gl_pt_enable->value)
+	{
+		R_UpdatePathtracerForCurrentFrame();
+		R_DrawPathtracerDepthPrePass();
+	}
+	
 	R_DrawWorld();
-
+	
 	R_DrawEntitiesOnList();
 
 	R_RenderDlights();
@@ -1277,9 +1289,16 @@ R_SetMode(void)
 	return true;
 }
 
+qboolean
+R_VersionOfGLIsGreaterThanOrEqualTo(int major, int minor)
+{
+	return gl_config.version_major > major || (gl_config.version_major == major && gl_config.version_minor >= minor);
+}
+
 int
 R_Init(void *hinstance, void *hWnd)
 {
+#define GET_PROC_ADDRESS(x) q##x = ( void * ) GLimp_GetProcAddress ( #x ); if (!q##x) { VID_Printf(PRINT_ALL, #x " was not found!\n"); return -1; }
 	char renderer_buffer[1000];
 	char vendor_buffer[1000];
 	int err;
@@ -1351,6 +1370,40 @@ R_Init(void *hinstance, void *hWnd)
 	Q_strlcpy(vendor_buffer, gl_config.vendor_string, sizeof(vendor_buffer));
 	Q_strlwr(vendor_buffer);
 
+	
+	
+	/* Get the major and minor version numbers of the context. For a context with version
+		less than 3.0 this will fail, so that case needs to be checked for. */
+		
+	/* First deal with any error which already occured. */
+	err = glGetError();
+
+	if (err != GL_NO_ERROR)
+	{
+		VID_Printf(PRINT_ALL, "Entering R_Init: glGetError() = 0x%x\n", err);
+	}
+	
+	gl_config.version_major = 0;
+	gl_config.version_minor = 0;
+
+	glGetIntegerv(GL_MAJOR_VERSION, &gl_config.version_major);
+
+	err = glGetError();
+
+	if (err != GL_NO_ERROR)
+	{
+		gl_config.version_major = 0;
+		gl_config.version_minor = 0;
+		VID_Printf(PRINT_ALL, "\n\nglGetIntegerv(GL_MAJOR_VERSION) failed with glGetError() = 0x%x, GL version is assumed to be less than 3.0", err);
+	}
+	else
+	{
+		glGetIntegerv(GL_MINOR_VERSION, &gl_config.version_minor);
+		VID_Printf(PRINT_ALL, "\n\nGL version is %d.%d", gl_config.version_major, gl_config.version_minor);
+	}
+
+
+	
 	Cvar_Set("scr_drawall", "0");
 	gl_config.allow_cds = true;
 
@@ -1414,9 +1467,11 @@ R_Init(void *hinstance, void *hWnd)
 		if (gl_ext_multitexture->value)
 		{
 			VID_Printf(PRINT_ALL, "...using GL_ARB_multitexture\n");
-			qglMultiTexCoord2fARB = ( void * ) GLimp_GetProcAddress ( "glMultiTexCoord2fARB" );
-			qglActiveTextureARB = ( void * ) GLimp_GetProcAddress ( "glActiveTextureARB" );
-			qglClientActiveTextureARB = ( void * ) GLimp_GetProcAddress ( "glClientActiveTextureARB" );
+			GET_PROC_ADDRESS(glMultiTexCoord2fARB);
+			GET_PROC_ADDRESS(glMultiTexCoord3fARB);
+			GET_PROC_ADDRESS(glMultiTexCoord4fARB);
+			GET_PROC_ADDRESS(glActiveTextureARB);
+			GET_PROC_ADDRESS(glClientActiveTextureARB);
 		}
 		else
 		{
@@ -1490,6 +1545,324 @@ R_Init(void *hinstance, void *hWnd)
 		}
 	}
 
+	/* ------------------------- GL_ARB_shader_objects ------------------------- */
+	
+	gl_config.shaders = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_shader_objects"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_shader_objects\n");
+		
+		gl_config.shaders = true;
+
+		GET_PROC_ADDRESS(glAttachObjectARB);
+		GET_PROC_ADDRESS(glCompileShaderARB);
+		GET_PROC_ADDRESS(glCreateProgramObjectARB);
+		GET_PROC_ADDRESS(glCreateShaderObjectARB);
+		GET_PROC_ADDRESS(glDeleteObjectARB);
+		GET_PROC_ADDRESS(glDetachObjectARB);
+		GET_PROC_ADDRESS(glGetActiveUniformARB);
+		GET_PROC_ADDRESS(glGetAttachedObjectsARB);
+		GET_PROC_ADDRESS(glGetHandleARB);
+		GET_PROC_ADDRESS(glGetInfoLogARB);
+		GET_PROC_ADDRESS(glGetObjectParameterfvARB);
+		GET_PROC_ADDRESS(glGetObjectParameterivARB);
+		GET_PROC_ADDRESS(glGetShaderSourceARB);
+		GET_PROC_ADDRESS(glGetUniformLocationARB);
+		GET_PROC_ADDRESS(glGetUniformfvARB);
+		GET_PROC_ADDRESS(glGetUniformivARB);
+		GET_PROC_ADDRESS(glLinkProgramARB);
+		GET_PROC_ADDRESS(glShaderSourceARB);
+		GET_PROC_ADDRESS(glUniform1fARB);
+		GET_PROC_ADDRESS(glUniform1fvARB);
+		GET_PROC_ADDRESS(glUniform1iARB);
+		GET_PROC_ADDRESS(glUniform1ivARB);
+		GET_PROC_ADDRESS(glUniform2fARB);
+		GET_PROC_ADDRESS(glUniform2fvARB);
+		GET_PROC_ADDRESS(glUniform2iARB);
+		GET_PROC_ADDRESS(glUniform2ivARB);
+		GET_PROC_ADDRESS(glUniform3fARB);
+		GET_PROC_ADDRESS(glUniform3fvARB);
+		GET_PROC_ADDRESS(glUniform3iARB);
+		GET_PROC_ADDRESS(glUniform3ivARB);
+		GET_PROC_ADDRESS(glUniform4fARB);
+		GET_PROC_ADDRESS(glUniform4fvARB);
+		GET_PROC_ADDRESS(glUniform4iARB);
+		GET_PROC_ADDRESS(glUniform4ivARB);
+		GET_PROC_ADDRESS(glUniformMatrix2fvARB);
+		GET_PROC_ADDRESS(glUniformMatrix3fvARB);
+		GET_PROC_ADDRESS(glUniformMatrix4fvARB);
+		GET_PROC_ADDRESS(glUseProgramObjectARB);
+		GET_PROC_ADDRESS(glValidateProgramARB);
+
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_shader_objects not found\n");
+		gl_config.shaders = false;
+	}
+	
+	CHECK_GL_ERROR();
+	
+	/* -------------------------- GL_ARB_vertex_shader ------------------------- */
+	
+	gl_config.vertex_shaders = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_vertex_shader"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_vertex_shader\n");
+		
+		gl_config.vertex_shaders = true;
+
+		GET_PROC_ADDRESS(glBindAttribLocationARB);
+		GET_PROC_ADDRESS(glGetActiveAttribARB);
+		GET_PROC_ADDRESS(glGetAttribLocationARB);
+
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_vertex_shader not found\n");
+		gl_config.vertex_shaders = false;
+	}
+	
+	/* -------------------------- GL_ARB_fragment_shader ------------------------- */
+	
+	gl_config.fragment_shaders = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_fragment_shader"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_fragment_shader\n");
+		gl_config.fragment_shaders = true;
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_fragment_shader not found\n");
+		gl_config.fragment_shaders = false;
+	}
+	
+	/* -------------------------- GL_ARB_texture_float ------------------------- */
+	
+	gl_config.float_textures = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_texture_float"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_texture_float\n");
+		gl_config.float_textures = true;
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_texture_float not found\n");
+		gl_config.float_textures = false;
+	}
+
+	/* -------------------------- GL_ATI_texture_float ------------------------- */
+	
+	if (!gl_config.float_textures)
+	{
+		if (strstr(gl_config.extensions_string, "GL_ATI_texture_float"))
+		{
+			VID_Printf(PRINT_ALL, "...using GL_ATI_texture_float\n");
+			gl_config.float_textures = true;
+		}
+		else
+		{
+			VID_Printf(PRINT_ALL, "...GL_ATI_texture_float not found\n");
+		}
+	}
+	
+	/* -------------------------- GL_ARB_texture_buffer_object ------------------------- */
+	
+	gl_config.texture_buffer_objects = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_texture_buffer_object"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_texture_buffer_object\n");
+		
+		gl_config.texture_buffer_objects = true;
+		
+		GET_PROC_ADDRESS(glTexBufferARB);
+
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_texture_buffer_object not found\n");
+		gl_config.texture_buffer_objects = false;
+	}
+	
+	/* -------------------------- GL_EXT_texture_buffer_object ------------------------- */
+
+	if (!gl_config.texture_buffer_objects)
+	{
+		if (strstr(gl_config.extensions_string, "GL_EXT_texture_buffer_object"))
+		{
+			VID_Printf(PRINT_ALL, "...using GL_EXT_texture_buffer_object\n");
+			
+			gl_config.texture_buffer_objects = true;
+			
+			GET_PROC_ADDRESS(glTexBufferEXT);
+
+		}
+		else
+		{
+			VID_Printf(PRINT_ALL, "...GL_EXT_texture_buffer_object not found\n");
+			gl_config.texture_buffer_objects = false;
+		}
+	}
+	
+	/* -------------------------- GL_ARB_texture_buffer_object_rgb32 ------------------------- */
+	
+	gl_config.texture_buffer_objects_rgb = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_texture_buffer_object_rgb32"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_texture_buffer_object_rgb32\n");
+		gl_config.texture_buffer_objects_rgb = true;
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_texture_buffer_object_rgb32 not found\n");
+		gl_config.texture_buffer_objects_rgb = false;
+	}
+	
+	/* ----------------------------- GL_VERSION_3_1 ---------------------------- */
+
+	if (R_VersionOfGLIsGreaterThanOrEqualTo(3, 1))
+	{
+		VID_Printf(PRINT_ALL, "...using OpenGL 3.1 features\n");
+
+		gl_config.texture_buffer_objects = true;
+		
+		GET_PROC_ADDRESS(glDrawArraysInstanced);
+		GET_PROC_ADDRESS(glDrawElementsInstanced);
+		GET_PROC_ADDRESS(glPrimitiveRestartIndex);
+		GET_PROC_ADDRESS(glTexBuffer);
+	}
+
+	/* ---------------------- GL_ARB_vertex_buffer_object ---------------------- */
+
+	gl_config.vertex_buffer_objects = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_vertex_buffer_object"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_vertex_buffer_object\n");
+		
+		gl_config.vertex_buffer_objects = true;
+		
+		GET_PROC_ADDRESS(glBindBufferARB);
+		GET_PROC_ADDRESS(glBufferDataARB);
+		GET_PROC_ADDRESS(glBufferSubDataARB);
+		GET_PROC_ADDRESS(glDeleteBuffersARB);
+		GET_PROC_ADDRESS(glGenBuffersARB);
+		GET_PROC_ADDRESS(glGetBufferParameterivARB);
+		GET_PROC_ADDRESS(glGetBufferPointervARB);
+		GET_PROC_ADDRESS(glGetBufferSubDataARB);
+		GET_PROC_ADDRESS(glIsBufferARB);
+		GET_PROC_ADDRESS(glMapBufferARB);
+		GET_PROC_ADDRESS(glUnmapBufferARB);
+
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_vertex_buffer_object not found\n");
+		gl_config.vertex_buffer_objects = false;
+	}
+	
+	/* ----------------------------- GL_VERSION_1_5 ---------------------------- */
+	
+	if (R_VersionOfGLIsGreaterThanOrEqualTo(1, 5))
+	{
+		VID_Printf(PRINT_ALL, "...using OpenGL 1.5 features\n");
+
+		gl_config.vertex_buffer_objects = true;
+		
+		GET_PROC_ADDRESS(glBeginQuery);
+		GET_PROC_ADDRESS(glBindBuffer);
+		GET_PROC_ADDRESS(glBufferData);
+		GET_PROC_ADDRESS(glBufferSubData);
+		GET_PROC_ADDRESS(glDeleteBuffers);
+		GET_PROC_ADDRESS(glDeleteQueries);
+		GET_PROC_ADDRESS(glEndQuery);
+		GET_PROC_ADDRESS(glGenBuffers);
+		GET_PROC_ADDRESS(glGenQueries);
+		GET_PROC_ADDRESS(glGetBufferParameteriv);
+		GET_PROC_ADDRESS(glGetBufferPointerv);
+		GET_PROC_ADDRESS(glGetBufferSubData);
+		GET_PROC_ADDRESS(glGetQueryObjectiv);
+		GET_PROC_ADDRESS(glGetQueryObjectuiv);
+		GET_PROC_ADDRESS(glGetQueryiv);
+		GET_PROC_ADDRESS(glIsBuffer);
+		GET_PROC_ADDRESS(glIsQuery);
+		GET_PROC_ADDRESS(glMapBuffer);
+		GET_PROC_ADDRESS(glUnmapBuffer);
+
+	}
+	
+	/* -------------------------- GL_ARB_texture_rg ------------------------- */
+	
+	gl_config.texture_rg = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_texture_rg"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_texture_rg\n");
+		gl_config.texture_rg = true;
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_texture_rg not found\n");
+		gl_config.texture_rg = false;
+	}
+	
+	/* -------------------------- NV_multisample_filter_hint ------------------------- */
+	
+	gl_config.multisample_filter_hint = false;
+	
+	if (strstr(gl_config.extensions_string, "NV_multisample_filter_hint"))
+	{
+		VID_Printf(PRINT_ALL, "...using NV_multisample_filter_hint\n");
+		gl_config.multisample_filter_hint = true;
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...NV_multisample_filter_hint not found\n");
+		gl_config.multisample_filter_hint = false;
+	}
+	
+	/* ---------------------- GL_ARB_map_buffer_range ---------------------- */
+
+	gl_config.map_buffer_range = false;
+	
+	if (strstr(gl_config.extensions_string, "GL_ARB_map_buffer_range"))
+	{
+		VID_Printf(PRINT_ALL, "...using GL_ARB_map_buffer_range\n");
+		
+		gl_config.map_buffer_range = true;
+		
+		GET_PROC_ADDRESS(glFlushMappedBufferRange);
+		GET_PROC_ADDRESS(glMapBufferRange);
+
+	}
+	else
+	{
+		VID_Printf(PRINT_ALL, "...GL_ARB_map_buffer_range not found\n");
+		gl_config.map_buffer_range = false;
+	}
+	
+
+	/* ----------------------------- GL_VERSION_1_2 ---------------------------- */
+
+	if (R_VersionOfGLIsGreaterThanOrEqualTo(1, 2))
+	{
+		VID_Printf(PRINT_ALL, "...using OpenGL 1.2 features\n");
+
+		GET_PROC_ADDRESS(glCopyTexSubImage3D);
+		GET_PROC_ADDRESS(glDrawRangeElements);
+		GET_PROC_ADDRESS(glTexImage3D);
+		GET_PROC_ADDRESS(glTexSubImage3D);
+
+	}
+	
+	CHECK_GL_ERROR();
+
 	R_SetDefaultState();
 
 	R_InitImages();
@@ -1497,14 +1870,17 @@ R_Init(void *hinstance, void *hWnd)
 	R_InitParticleTexture();
 	Draw_InitLocal();
 
+	R_InitPathtracing();
+	
 	err = glGetError();
 
 	if (err != GL_NO_ERROR)
 	{
-		VID_Printf(PRINT_ALL, "glGetError() = 0x%x\n", err);
+		VID_Printf(PRINT_ALL, "Exiting R_Init: glGetError() = 0x%x\n", err);
 	}
 
 	return true;
+#undef GET_PROC_ADDRESS
 }
 
 void
@@ -1519,6 +1895,8 @@ R_Shutdown(void)
 
 	R_ShutdownImages();
 
+	R_ShutdownPathtracing();
+	
 	/* shutdown OS specific OpenGL stuff like contexts, etc.  */
 	GLimp_Shutdown();
 

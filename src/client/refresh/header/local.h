@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2016,2017 Edd Biddulph
  * Copyright (C) 1997-2001 Id Software, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -77,7 +78,7 @@
 #define MAX_SCRAPS 1
 #define BLOCK_WIDTH 128
 #define BLOCK_HEIGHT 128
-#define REF_VERSION "Yamagi Quake II OpenGL Refresher"
+#define REF_VERSION "Yamagi Quake II OpenGL Refresher (+Pathtracing)"
 #define MAX_LBM_HEIGHT 480
 #define BACKFACE_EPSILON 0.01
 #define DYNAMIC_LIGHT_WIDTH 128
@@ -94,6 +95,10 @@
 
 /* fall over */
 #define ROLL 2
+
+#define STRINGIFY2(x) #x
+#define STRINGIFY(x) STRINGIFY2(x)
+#define CHECK_GL_ERROR() { GLuint err = glGetError(); if (err != GL_NO_ERROR) {	VID_Printf(PRINT_ALL, "OpenGL Error at " __FILE__ " line " STRINGIFY(__LINE__) ": glGetError() = 0x%x\n", err); } }
 
 char *strlwr(char *s);
 extern viddef_t vid;
@@ -148,6 +153,9 @@ typedef struct image_s
 	qboolean has_alpha;
 
 	qboolean paletted;
+	
+	/* Surface reflectivity for pathtracing. */
+	vec3_t reflectivity;
 } image_t;
 
 typedef enum
@@ -276,6 +284,9 @@ extern cvar_t *vid_gamma;
 
 extern cvar_t *intensity;
 
+extern cvar_t *gl_pt_enable;
+extern cvar_t *gl_pt_specular_factor;
+
 extern int gl_lightmap_format;
 extern int gl_solid_format;
 extern int gl_alpha_format;
@@ -359,6 +370,25 @@ void R_TextureAlphaMode(char *string);
 void R_TextureSolidMode(char *string);
 int Scrap_AllocBlock(int w, int h, int *x, int *y);
 
+
+/*
+ * Pathtracing
+ */
+ 
+void R_InitPathtracing(void);
+void R_ShutdownPathtracing(void);
+void R_PreparePathtracer(void);
+void R_UpdatePathtracerForCurrentFrame(void);
+void R_ConstructEntityToWorldMatrix(float m[16], entity_t *entity);
+void R_SetGLStateForPathtracing(entity_t* entity, const float entity_to_world_matrix[16]);
+void R_ClearGLStateForPathtracing(void);
+void R_DrawPathtracerDepthPrePass(void);
+void R_CaptureWorldForTAA(void);
+
+qboolean R_PathtracingIsSupportedByGL(void);
+qboolean R_VersionOfGLIsGreaterThanOrEqualTo(int major, int minor);
+
+
 /* GL extension emulation functions */
 void R_DrawParticles2(int n,
 		const particle_t particles[],
@@ -382,6 +412,20 @@ typedef struct
 	qboolean anisotropic;
 	qboolean tex_npot;
 	float max_anisotropy;
+	
+	qboolean shaders;
+	qboolean vertex_shaders;
+	qboolean fragment_shaders;
+	qboolean float_textures;
+	qboolean texture_buffer_objects;
+	qboolean texture_buffer_objects_rgb;
+	qboolean vertex_buffer_objects;
+	qboolean texture_rg;
+	qboolean map_buffer_range;
+	qboolean multisample_filter_hint;
+
+	GLint version_major;
+	GLint version_minor;
 } glconfig_t;
 
 typedef struct
